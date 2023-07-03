@@ -1,3 +1,4 @@
 setting/*
 !setting/template.json
+__pycache__/
 docker-compose.yml

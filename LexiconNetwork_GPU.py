@@ -19,7 +19,7 @@ class LexiconNetwork:
         self.wordlist = self.model.index_to_key
         self.dimention = len(self.wordlist)
         self.wordVectors = cp.array([self.model.get_vector(word) for word in self.model.index_to_key])
-        self.LexiconNetwork = PropertyGraph()
+        self.G = PropertyGraph()
 
         self.makeLexiconNetwork()
         
@@ -28,13 +28,13 @@ class LexiconNetwork:
         print("[\033[2m+\033[m] Add word in lexicon network...")
         vertDf = cudf.DataFrame({"id":[i for i in range(len(self.wordlist))], "label":self.wordlist, "reservior":cp.zeros(len(self.wordlist)), 
                                  "inflow":cp.zeros(len(self.wordlist)), "outflow":cp.zeros(len(self.wordlist))})
-        self.LexiconNetwork.add_vertex_data(vertDf, vertex_col_name="id")
+        self.G.add_vertex_data(vertDf, vertex_col_name="id")
         
         """Calc cosine similarity of each words"""
         print("[\033[2m+\033[m] Calc similarity of each words...")
         # calc norm vector following row 
-        normVectors = cp.linalg.norm(self.wordVectors, axis=1)
-        similarities = cp.dot(self.wordVectors, self.wordVectors.T) / cp.dot(normVectors, normVectors.T)
+        normVectors = cp.linalg.norm(self.wordVectors, axis=1).reshape(-1, 1)
+        similarities = cp.dot(self.wordVectors, self.wordVectors.T) / cp.dot(normVectors, normVectors.reshape(1, -1))
         # replace similarity of one of duplication edge pair(1-2:2-1) to cp.nan
         similarities[cp.tril_indices(similarities.shape[0])] = cp.nan
         similarities = cp.ravel(similarities)
@@ -52,16 +52,16 @@ class LexiconNetwork:
         edgeDf["weight"] = similarities
         # delete one of duplication edge pair
         edgeDf = edgeDf.dropna(how="any")
-        self.LexiconNetwork.add_edge_data(edgeDf, vertex_col_names=("src", "dst"))
+        self.G.add_edge_data(edgeDf, vertex_col_names=("src", "dst"))
         print("[\033[2m+\033[m]\033[1;32m Sucsess to generate lexicon network !! \033[m")
-        print(self.LexiconNetwork.get_vertex_data())
-        print(self.LexiconNetwork.get_edge_data())
+        #print(self.G.get_vertex_data())
+        #print(self.G.get_edge_data())
         
 
     def saveLexiconNetwork(self, savePath):
         """Export graph object (pickle)"""
         with open(savePath, "wb") as f:
-            pickle.dump(self.LexiconNetwork, f)
+            pickle.dump(self.G, f)
             os.chmod(savePath, 755)
             print(f"[\033[2m+\033[m] Save to {savePath}")
         
