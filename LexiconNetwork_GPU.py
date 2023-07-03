@@ -20,11 +20,14 @@ class LexiconNetwork:
         self.dimention = len(self.wordlist)
         self.wordVectors = cp.array([self.model.get_vector(word) for word in self.model.index_to_key])
         self.LexiconNetwork = PropertyGraph()
+
+        self.makeLexiconNetwork()
         
     def makeLexiconNetwork(self):
         """Add vertex(word) in lexicon netowrk graph"""
         print("[\033[2m+\033[m] Add word in lexicon network...")
-        vertDf = cudf.DataFrame({"id":[i for i in range(len(self.wordlist))], "label":self.wordlist})
+        vertDf = cudf.DataFrame({"id":[i for i in range(len(self.wordlist))], "label":self.wordlist, "reservior":cp.zeros(len(self.wordlist)), 
+                                 "inflow":cp.zeros(len(self.wordlist)), "outflow":cp.zeros(len(self.wordlist))})
         self.LexiconNetwork.add_vertex_data(vertDf, vertex_col_name="id")
         
         """Calc cosine similarity of each words"""
@@ -68,6 +71,6 @@ if __name__ == "__main__":
         setting = json.load(f)
 
     sn = LexiconNetwork(setting["vector_path"])
-    sn.makeLexiconNetwork()
-    sn.saveLexiconNetwork(setting["save_path"])
+    #sn.makeLexiconNetwork()
+    #sn.saveLexiconNetwork(setting["save_path"])
 
