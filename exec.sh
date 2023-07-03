@@ -1,0 +1,1 @@
+docker run --gpus all --rm -it -v ~:/mnt --shm-size=1g --ulimit memlock=-1 --ulimit stack=67108864  a5e3709ef9fa

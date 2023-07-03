@@ -1,83 +1,73 @@
 # Import needed libraries
-import time
 import cugraph
 import cudf
 from cugraph.experimental import PropertyGraph
-
 import cupy as cp
-
-import networkx as nx
 from gensim.models import KeyedVectors
-import re
-from tqdm import tqdm
+import json
 import sys
 import pickle
 import os
 
-class SimilarNetwork:
-    def __init__(self):
-        path = f'/mnt/Project/Resource/jawiki.all_vectors.200d.20000w.stop.txt'
-        print(f"model path:{path}")
-        print("Word2Vec loading...")
-        self.model = KeyedVectors.load_word2vec_format(path)
-        print("Complete Word2Vec loading")
+class LexiconNetwork:
+    def __init__(self, vectorPath):
+        print(f"model path:{vectorPath}")
+        print("[\033[2m+\033[m] Loading word vector model...")
+        self.model = KeyedVectors.load_word2vec_format(vectorPath)
+        print("[\033[2m+\033[m]\033[1;32m Sucsess to load word vectors !! \033[m")
 
         self.wordlist = self.model.index_to_key
         self.dimention = len(self.wordlist)
         self.wordVectors = cp.array([self.model.get_vector(word) for word in self.model.index_to_key])
-        self.similarityNetwork = PropertyGraph()
+        self.LexiconNetwork = PropertyGraph()
         
-    def makeSimilarNetwork(self):
+    def makeLexiconNetwork(self):
+        """Add vertex(word) in lexicon netowrk graph"""
+        print("[\033[2m+\033[m] Add word in lexicon network...")
         vertDf = cudf.DataFrame({"id":[i for i in range(len(self.wordlist))], "label":self.wordlist})
-        #print(vertDf)
+        self.LexiconNetwork.add_vertex_data(vertDf, vertex_col_name="id")
         
-        self.similarityNetwork.add_vertex_data(vertDf, vertex_col_name="id")
-        """
-        for i in tqdm(range(len(self.wordlist))):
-            for j in range(1, len(self.wordlist)):
-                similarity = self.model.similarity(self.wordlist[i], self.wordlist[j])
-                edgeDf = cudf.DataFrame(columns=["src", "dst", "weight"], data=[(i, j, similarity)])
-                self.similarityNetwork.add_edge_data(edgeDf, vertex_col_names=("src", "dst"))
-        """
-        """
-        for v_i, v in enumerate(tqdm(self.wordVectors)):
-            #print(v_i, range(v_i + 1, len(self.wordVectors)))
-            similarities = cp.dot(self.wordVectors[v_i + 1:], v.T) / (cp.linalg.norm(v) * cp.linalg.norm(self.wordVectors[v_i + 1:], axis=1))
-            edgeDf = cudf.DataFrame(columns=["src", "dst", "weight"], data=[(v_i, v_j, similarity) for v_j, similarity in zip(range(v_i + 1, len(self.wordVectors)), similarities)])
-            self.similarityNetwork.add_edge_data(edgeDf, vertex_col_names=("src", "dst"))
-        """
+        """Calc cosine similarity of each words"""
+        print("[\033[2m+\033[m] Calc similarity of each words...")
+        # calc norm vector following row 
         normVectors = cp.linalg.norm(self.wordVectors, axis=1)
         similarities = cp.dot(self.wordVectors, self.wordVectors.T) / cp.dot(normVectors, normVectors.T)
-        #print(similarities)
+        # replace similarity of one of duplication edge pair(1-2:2-1) to cp.nan
         similarities[cp.tril_indices(similarities.shape[0])] = cp.nan
-        #print(similarities)
         similarities = cp.ravel(similarities)
-        #print(similarities)
-        #print(similarities.shape)
+        
+
+        """Add edge to lexicon netowrk graph"""
+        print("[\033[2m+\033[m] Add edge in lexicon network...")
+        # make combination edges pair
         vertexList = cp.array(range(self.dimention))
         edgeList = cp.array(cp.meshgrid(vertexList, vertexList)).T.reshape(-1, 2)
-        #print(edgeList)
-        #print(edgeList.shape)
+        # make edge dataframe
         edgeDf = cudf.DataFrame({})
         edgeDf["src"] = edgeList[:, 0]
         edgeDf["dst"] = edgeList[:, 1]
-        #print(edgeDf)
         edgeDf["weight"] = similarities
+        # delete one of duplication edge pair
         edgeDf = edgeDf.dropna(how="any")
-        #print(edgeDf.info)
-        #print(normVectors.shape)
-        #print(similarities.shape)
-        #edgeDf = cudf.DataFrame(columns=["src", "dst", "weight"], data=[(i, j, similarities[i, j]) for i in tqdm(range(self.dimention - 1)) for j in range(i + 1, self.dimention)])
-        self.similarityNetwork.add_edge_data(edgeDf, vertex_col_names=("src", "dst"))
-
-        with open(f'/mnt/Project/Resource/SimilarityNetwor_test_complete_20000w_2.pkl', "wb") as f:
-            pickle.dump(self.similarityNetwork, f)
-            os.chmod(f'/mnt/Project/Resource/SimilarityNetwor_test_complete_20000w_2.pkl', 755)
+        self.LexiconNetwork.add_edge_data(edgeDf, vertex_col_names=("src", "dst"))
+        print("[\033[2m+\033[m]\033[1;32m Sucsess to generate lexicon network !! \033[m")
+        print(self.LexiconNetwork.get_vertex_data())
+        print(self.LexiconNetwork.get_edge_data())
         
 
+    def saveLexiconNetwork(self, savePath):
+        """Export graph object (pickle)"""
+        with open(savePath, "wb") as f:
+            pickle.dump(self.LexiconNetwork, f)
+            os.chmod(savePath, 755)
+            print(f"[\033[2m+\033[m] Save to {savePath}")
+        
 
-def main():
-    sn = SimilarNetwork()
-    sn.makeSimilarNetwork()
+if __name__ == "__main__":
+    with open(sys.argv[1], "r") as f:
+        setting = json.load(f)
 
-main()
+    sn = LexiconNetwork(setting["vector_path"])
+    sn.makeLexiconNetwork()
+    sn.saveLexiconNetwork(setting["save_path"])
+
