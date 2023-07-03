@@ -26,8 +26,8 @@ class LexiconNetwork:
     def makeLexiconNetwork(self):
         """Add vertex(word) in lexicon netowrk graph"""
         print("[\033[2m+\033[m] Add word in lexicon network...")
-        vertDf = cudf.DataFrame({"id":[i for i in range(len(self.wordlist))], "label":self.wordlist, "reservior":cp.zeros(len(self.wordlist)), 
-                                 "inflow":cp.zeros(len(self.wordlist)), "outflow":cp.zeros(len(self.wordlist))})
+        vertDf = cudf.DataFrame({"id":range(len(self.wordlist)), "label":self.wordlist, "reservior":0.0, 
+                                 "inflow":0.0, "outflow":0.0, "activation":False})
         self.G.add_vertex_data(vertDf, vertex_col_name="id")
         
         """Calc cosine similarity of each words"""
