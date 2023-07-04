@@ -11,7 +11,8 @@ import os
 
 class LexiconNetwork:
     def __init__(self, vectorPath):
-        print(f"model path:{vectorPath}")
+        print("\033[1;35mGenerating lexicon network\033[m")
+        print(f"[\033[2m+\033[m] model path:{vectorPath}")
         print("[\033[2m+\033[m] Loading word vector model...")
         self.model = KeyedVectors.load_word2vec_format(vectorPath)
         print("[\033[2m+\033[m]\033[1;32m Sucsess to load word vectors !! \033[m")
@@ -26,7 +27,7 @@ class LexiconNetwork:
     def makeLexiconNetwork(self):
         """Add vertex(word) in lexicon netowrk graph"""
         print("[\033[2m+\033[m] Add word in lexicon network...")
-        vertDf = cudf.DataFrame({"id":range(len(self.wordlist)), "label":self.wordlist, "reservior":0.0, 
+        vertDf = cudf.DataFrame({"id":range(len(self.wordlist)), "label":self.wordlist, "reservoir":0.0, 
                                  "inflow":0.0, "outflow":0.0, "activation":False})
         self.G.add_vertex_data(vertDf, vertex_col_name="id")
         
