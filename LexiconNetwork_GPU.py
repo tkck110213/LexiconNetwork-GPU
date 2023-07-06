@@ -10,7 +10,7 @@ import pickle
 import os
 
 class LexiconNetwork:
-    def __init__(self, vectorPath):
+    def __init__(self, vectorPath, thresholdWeight):
         print("\033[1;35mGenerating lexicon network\033[m")
         print(f"[\033[2m+\033[m] model path:{vectorPath}")
         print("[\033[2m+\033[m] Loading word vector model...")
@@ -22,9 +22,9 @@ class LexiconNetwork:
         self.wordVectors = cp.array([self.model.get_vector(word) for word in self.model.index_to_key])
         self.G = PropertyGraph()
 
-        self.makeLexiconNetwork()
+        self.makeLexiconNetwork(thresholdWeight)
         
-    def makeLexiconNetwork(self):
+    def makeLexiconNetwork(self, thresholdWeight):
         """Add vertex(word) in lexicon netowrk graph"""
         print("[\033[2m+\033[m] Add word in lexicon network...")
         vertDf = cudf.DataFrame({"id":range(len(self.wordlist)), "label":self.wordlist, "reservoir":0.0, 
@@ -36,8 +36,8 @@ class LexiconNetwork:
         # calc norm vector following row 
         normVectors = cp.linalg.norm(self.wordVectors, axis=1).reshape(-1, 1)
         similarities = cp.dot(self.wordVectors, self.wordVectors.T) / cp.dot(normVectors, normVectors.reshape(1, -1))
-        # replace similarity of one of duplication edge pair(1-2:2-1) to cp.nan
-        similarities[cp.tril_indices(similarities.shape[0])] = cp.nan
+        # replace self loop edge (example: 1-1, 2-2...) to cp.nan
+        similarities[cp.diag_indices(similarities.shape[0])] = cp.nan
         similarities = cp.ravel(similarities)
         
 
@@ -51,8 +51,13 @@ class LexiconNetwork:
         edgeDf["src"] = edgeList[:, 0]
         edgeDf["dst"] = edgeList[:, 1]
         edgeDf["weight"] = similarities
-        # delete one of duplication edge pair
+        # delete self loop edge
         edgeDf = edgeDf.dropna(how="any")
+        # delete edge which have weight(similarity) of less than threshold value
+        if thresholdWeight != None:
+            edgeDf = edgeDf.query(f"weight >= {thresholdWeight}")
+        else:
+            edgeDf = edgeDf.query(f"not weight < {0.0}")
         self.G.add_edge_data(edgeDf, vertex_col_names=("src", "dst"))
         print("[\033[2m+\033[m]\033[1;32m Sucsess to generate lexicon network !! \033[m")
         #print(self.G.get_vertex_data())
