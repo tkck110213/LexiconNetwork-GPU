@@ -7,6 +7,7 @@ from gensim.models import KeyedVectors
 import json
 import sys
 import pickle
+import MeCab
 import os
 
 class LexiconNetwork:
@@ -27,9 +28,9 @@ class LexiconNetwork:
     def makeLexiconNetwork(self, thresholdWeight):
         """Add vertex(word) in lexicon netowrk graph"""
         print("[\033[2m+\033[m] Add word in lexicon network...")
-        vertDf = cudf.DataFrame({"id":range(len(self.wordlist)), "label":self.wordlist, "reservoir":0.0, 
+        vertexDf = cudf.DataFrame({"id":range(len(self.wordlist)), "label":self.wordlist, "reservoir":0.0, 
                                  "inflow":0.0, "outflow":0.0, "activation":False})
-        self.G.add_vertex_data(vertDf, vertex_col_name="id")
+        self.G.add_vertex_data(vertexDf, vertex_col_name="id")
         
         """Calc cosine similarity of each words"""
         print("[\033[2m+\033[m] Calc similarity of each words...")
@@ -62,8 +63,11 @@ class LexiconNetwork:
         print("[\033[2m+\033[m]\033[1;32m Sucsess to generate lexicon network !! \033[m")
         #print(self.G.get_vertex_data())
         #print(self.G.get_edge_data())
-        
 
+    def isExsitsWord(self, word):
+        return word in self.model.index_to_key
+
+    
     def saveLexiconNetwork(self, savePath):
         """Export graph object (pickle)"""
         with open(savePath, "wb") as f:
