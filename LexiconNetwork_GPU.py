@@ -7,43 +7,52 @@ from gensim.models import KeyedVectors
 import json
 import sys
 import pickle
-import MeCab
 import os
+import Levenshtein
+import itertools
+import pyopenjtalk
+from contextlib import redirect_stderr
+import warnings
+
+
+
+
 
 class LexiconNetwork:
     def __init__(self, vectorPath, thresholdWeight):
-        print("\033[1;35mGenerating lexicon network\033[m")
-        print(f"[\033[2m+\033[m] model path:{vectorPath}")
+        print(f"model path:{vectorPath}")
         print("[\033[2m+\033[m] Loading word vector model...")
         self.model = KeyedVectors.load_word2vec_format(vectorPath)
         print("[\033[2m+\033[m]\033[1;32m Sucsess to load word vectors !! \033[m")
 
-        self.wordlist = self.model.index_to_key
+        self.wordlist = [word.replace("#", "") for word in self.model.index_to_key]
         self.dimention = len(self.wordlist)
         self.wordVectors = cp.array([self.model.get_vector(word) for word in self.model.index_to_key])
-        self.G = PropertyGraph()
+        self.SemanticNetwork = PropertyGraph()
+        self.PhonologicalNetwork = PropertyGraph()
 
-        self.makeLexiconNetwork(thresholdWeight)
+        self.makeSemanticNetwork(thresholdWeight)
+        self.makePhonologicalNetwork()
         
-    def makeLexiconNetwork(self, thresholdWeight):
+    def makeSemanticNetwork(self, thresholdWeight):
         """Add vertex(word) in lexicon netowrk graph"""
         print("[\033[2m+\033[m] Add word in lexicon network...")
-        vertexDf = cudf.DataFrame({"id":range(len(self.wordlist)), "label":self.wordlist, "reservoir":0.0, 
+        vertDf = cudf.DataFrame({"id":range(len(self.wordlist)), "label":self.wordlist, "reservoir":0.0, 
                                  "inflow":0.0, "outflow":0.0, "activation":False})
-        self.G.add_vertex_data(vertexDf, vertex_col_name="id")
+        self.SemanticNetwork.add_vertex_data(vertDf, vertex_col_name="id")
         
         """Calc cosine similarity of each words"""
         print("[\033[2m+\033[m] Calc similarity of each words...")
         # calc norm vector following row 
-        normVectors = cp.linalg.norm(self.wordVectors, axis=1).reshape(-1, 1)
-        similarities = cp.dot(self.wordVectors, self.wordVectors.T) / cp.dot(normVectors, normVectors.reshape(1, -1))
-        # replace self loop edge (example: 1-1, 2-2...) to cp.nan
-        similarities[cp.diag_indices(similarities.shape[0])] = cp.nan
+        normVectors = cp.linalg.norm(self.wordVectors, axis=1)
+        similarities = cp.dot(self.wordVectors, self.wordVectors.T) / cp.dot(normVectors, normVectors.T)
+        # replace similarity of one of duplication edge pair(1-2:2-1) to cp.nan
+        similarities[cp.tril_indices(similarities.shape[0])] = cp.nan
         similarities = cp.ravel(similarities)
         
 
         """Add edge to lexicon netowrk graph"""
-        print("[\033[2m+\033[m] Add edge in lexicon network...")
+        print("[\033[2m+\033[m] Add edge in semantic network...")
         # make combination edges pair
         vertexList = cp.array(range(self.dimention))
         edgeList = cp.array(cp.meshgrid(vertexList, vertexList)).T.reshape(-1, 2)
@@ -52,28 +61,43 @@ class LexiconNetwork:
         edgeDf["src"] = edgeList[:, 0]
         edgeDf["dst"] = edgeList[:, 1]
         edgeDf["weight"] = similarities
-        # delete self loop edge
+        # delete one of duplication edge pair
         edgeDf = edgeDf.dropna(how="any")
         # delete edge which have weight(similarity) of less than threshold value
         if thresholdWeight != None:
             edgeDf = edgeDf.query(f"weight >= {thresholdWeight}")
         else:
             edgeDf = edgeDf.query(f"not weight < {0.0}")
-        self.G.add_edge_data(edgeDf, vertex_col_names=("src", "dst"))
-        print("[\033[2m+\033[m]\033[1;32m Sucsess to generate lexicon network !! \033[m")
-        #print(self.G.get_vertex_data())
-        #print(self.G.get_edge_data())
+        self.SemanticNetwork.add_edge_data(edgeDf, vertex_col_names=("src", "dst"))
+        print("[\033[2m+\033[m]\033[1;32m Sucsess to generate semantic network !! \033[m")
 
-    def isExsitsWord(self, word):
-        return word in self.model.index_to_key
 
-    
+
+    def makePhonologicalNetwork(self):
+        print("[\033[2m+\033[m] Add word in phonological network...")
+        vertDf = cudf.DataFrame({"id":range(len(self.wordlist)), "label":self.wordlist, "reservoir":0.0, 
+                                 "inflow":0.0, "outflow":0.0, "activation":False})
+        self.PhonologicalNetwork.add_vertex_data(vertDf, vertex_col_name="id")
+
+        # make edge dataframe
+        edgeDf = cudf.DataFrame({})
+        wordIdcomb = list(itertools.combinations(range(self.dimention), 2))
+        wordIdNear = [Id for Id in wordIdcomb if Levenshtein.distance(pyopenjtalk.g2p(self.wordlist[Id[0]]), pyopenjtalk.g2p(self.wordlist[Id[1]])) < 2]
+        edgeDf["src"] = [Id[0] for Id in wordIdNear] + [Id[1] for Id in wordIdNear]
+        edgeDf["dst"] = [Id[1] for Id in wordIdNear] + [Id[0] for Id in wordIdNear]
+        self.PhonologicalNetwork.add_edge_data(edgeDf, vertex_col_names=("src", "dst"))
+        #print(self.PhonologicalNetwork.get_vertex_data())
+        #print(self.PhonologicalNetwork.get_edge_data())
+
     def saveLexiconNetwork(self, savePath):
         """Export graph object (pickle)"""
         with open(savePath, "wb") as f:
-            pickle.dump(self.G, f)
+            pickle.dump(self.SemanticNetwork, f)
             os.chmod(savePath, 755)
             print(f"[\033[2m+\033[m] Save to {savePath}")
+
+    def isExsitsWord(self, word):
+        return word in self.wordlist
         
 
 if __name__ == "__main__":
@@ -81,6 +105,5 @@ if __name__ == "__main__":
         setting = json.load(f)
 
     sn = LexiconNetwork(setting["vector_path"])
-    #sn.makeLexiconNetwork()
+    sn.makePhonologicalNetwork()
     #sn.saveLexiconNetwork(setting["save_path"])
-
